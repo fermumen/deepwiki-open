@@ -25,7 +25,7 @@ from openai.types.chat.chat_completion import Choice
 
 openai = safe_import(OptionalPackages.OPENAI.value[0], OptionalPackages.OPENAI.value[1])
 
-from openai import OpenAI, AsyncOpenAI, Stream
+from openai import OpenAI, AsyncOpenAI, Stream, AzureOpenAI, AsyncAzureOpenAI
 from openai import (
     APITimeoutError,
     InternalServerError,
@@ -166,6 +166,7 @@ class OpenAIClient(ModelClient):
         base_url: Optional[str] = None,
         env_base_url_name: str = "OPENAI_BASE_URL",
         env_api_key_name: str = "OPENAI_API_KEY",
+        env_azure_api_version_name: str = "AZURE_OPENAI_API_VERSION", # New
     ):
         r"""It is recommended to set the OPENAI_API_KEY environment variable instead of passing it as an argument.
 
@@ -179,6 +180,7 @@ class OpenAIClient(ModelClient):
         self._env_api_key_name = env_api_key_name
         self._env_base_url_name = env_base_url_name
         self.base_url = base_url or os.getenv(self._env_base_url_name, "https://api.openai.com/v1")
+        self.azure_api_version = os.getenv(env_azure_api_version_name, "2023-07-01-preview") # New
         self.sync_client = self.init_sync_client()
         self.async_client = None  # only initialize if the async call is called
         self.chat_completion_parser = (
@@ -193,7 +195,17 @@ class OpenAIClient(ModelClient):
             raise ValueError(
                 f"Environment variable {self._env_api_key_name} must be set"
             )
-        return OpenAI(api_key=api_key, base_url=self.base_url)
+        
+        if ".azure.com" in self.base_url or "openai.azure.com" in self.base_url:
+            log.info(f"Initializing AzureOpenAI client with endpoint: {self.base_url} and api_version: {self.azure_api_version}")
+            return AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=self.base_url,
+                api_version=self.azure_api_version
+            )
+        else:
+            log.info(f"Initializing OpenAI client with base_url: {self.base_url}")
+            return OpenAI(api_key=api_key, base_url=self.base_url)
 
     def init_async_client(self):
         api_key = self._api_key or os.getenv(self._env_api_key_name)
@@ -201,7 +213,17 @@ class OpenAIClient(ModelClient):
             raise ValueError(
                 f"Environment variable {self._env_api_key_name} must be set"
             )
-        return AsyncOpenAI(api_key=api_key, base_url=self.base_url)
+
+        if ".azure.com" in self.base_url or "openai.azure.com" in self.base_url:
+            log.info(f"Initializing AsyncAzureOpenAI client with endpoint: {self.base_url} and api_version: {self.azure_api_version}")
+            return AsyncAzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=self.base_url,
+                api_version=self.azure_api_version
+            )
+        else:
+            log.info(f"Initializing AsyncOpenAI client with base_url: {self.base_url}")
+            return AsyncOpenAI(api_key=api_key, base_url=self.base_url)
 
     # def _parse_chat_completion(self, completion: ChatCompletion) -> "GeneratorOutput":
     #     # TODO: raw output it is better to save the whole completion as a source of truth instead of just the message

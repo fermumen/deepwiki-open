@@ -26,13 +26,15 @@ Create a `.env` file in the project root:
 ```
 # Required API Keys
 GOOGLE_API_KEY=your_google_api_key        # Required for Google Gemini models
-OPENAI_API_KEY=your_openai_api_key        # Required for embeddings and OpenAI models
+OPENAI_API_KEY=your_openai_api_key        # Required for embeddings and OpenAI models. For Azure, this is your Azure OpenAI resource API key.
 
 # Optional API Keys
 OPENROUTER_API_KEY=your_openrouter_api_key  # Required only if using OpenRouter models
 
 # OpenAI API Configuration
 OPENAI_BASE_URL=https://custom-api-endpoint.com/v1  # Optional, for custom OpenAI API endpoints
+# For Azure OpenAI, set OPENAI_BASE_URL to your Azure resource endpoint.
+AZURE_OPENAI_API_VERSION=your_azure_api_version # Optional, defaults to 2023-07-01-preview.
 
 # Server Configuration
 PORT=8001  # Optional, defaults to 8001
@@ -103,6 +105,16 @@ python -m api.main
 ```
 
 The API will be available at `http://localhost:8001`
+
+### Using with Microsoft Azure OpenAI
+
+To use this service with Azure OpenAI:
+1.  Set the `OPENAI_BASE_URL` environment variable to your Azure OpenAI resource's endpoint (e.g., `https://your-resource-name.openai.azure.com/`).
+2.  Ensure `OPENAI_API_KEY` is set to the API key for your Azure OpenAI resource.
+3.  Optionally, set `AZURE_OPENAI_API_VERSION` to specify the API version (e.g., `2023-07-01-preview`). If not set, a default version will be used.
+4.  **Crucially**:
+    *   In `api/config/embedder.json`, when using the `OpenAIClient` for embeddings via Azure, the `"model"` value (e.g., `"text-embedding-3-small"`) **must be your Azure Deployment ID** for the embedding model.
+    *   Similarly, in `api/config/generator.json`, if you define an OpenAI provider pointing to Azure, any `"model"` names listed **must be your Azure Deployment IDs** for the chat completion models.
 
 ## 🧠 How It Works
 

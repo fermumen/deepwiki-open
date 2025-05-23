@@ -184,11 +184,13 @@ Each provider requires its corresponding API key environment variables:
 ```
 # API Keys
 GOOGLE_API_KEY=your_google_api_key        # Required for Google Gemini models
-OPENAI_API_KEY=your_openai_api_key        # Required for OpenAI models
+OPENAI_API_KEY=your_openai_api_key        # Required for OpenAI models. When using Azure OpenAI, this key is used as the `api-key` for your Azure resource.
 OPENROUTER_API_KEY=your_openrouter_api_key # Required for OpenRouter models
 
 # OpenAI API Base URL Configuration
 OPENAI_BASE_URL=https://custom-api-endpoint.com/v1  # Optional, for custom OpenAI API endpoints
+# For Azure OpenAI, set OPENAI_BASE_URL to your Azure resource endpoint, e.g., https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_VERSION=your_azure_api_version # Optional, defaults to 2023-07-01-preview. Specifies the API version for Azure OpenAI.
 
 # Configuration Directory
 DEEPWIKI_CONFIG_DIR=/path/to/custom/config/dir  # Optional, for custom config file location
@@ -203,10 +205,16 @@ DeepWiki uses JSON configuration files to manage various aspects of the system:
    - Specifies default and available models for each provider
    - Contains model-specific parameters like temperature and top_p
 
+        **Note for Azure OpenAI Users (Chat Completions):**
+        If you configure a provider in `generator.json` to use `OpenAIClient` and an Azure `OPENAI_BASE_URL`, the `model` names listed for that provider (e.g., `gpt-4o`) **must be your Azure Deployment IDs** for the respective chat models.
+
 2. **`embedder.json`**: Configuration for embedding models and text processing
    - Defines embedding models for vector storage
    - Contains retriever configuration for RAG
    - Specifies text splitter settings for document chunking
+
+        **Note for Azure OpenAI Users (Embeddings):**
+        If you set `OPENAI_BASE_URL` to point to your Azure OpenAI service, the `model` value specified in `embedder.json` (e.g., `text-embedding-3-small`) under the `OpenAIClient` configuration **must be your Azure Deployment ID** for the embedding model.
 
 3. **`repo.json`**: Configuration for repository handling
    - Contains file filters to exclude certain files and directories
@@ -241,8 +249,10 @@ The OpenAI Client's base_url configuration is designed primarily for enterprise 
 | Variable | Description | Required | Note |
 |----------|-------------|----------|------|
 | `GOOGLE_API_KEY` | Google Gemini API key for AI generation | No | Required only if you want to use Google Gemini models
-| `OPENAI_API_KEY` | OpenAI API key for embeddings | Yes | Note: This is required even if you're not using OpenAI models, as it's used for embeddings. |
+| `OPENAI_API_KEY` | OpenAI API key. Used for standard OpenAI services. If `OPENAI_BASE_URL` points to an Azure OpenAI endpoint, this key is used for Azure authentication. | Yes | Note: This is required even if you're not using OpenAI models, as it's used for embeddings. |
 | `OPENROUTER_API_KEY` | OpenRouter API key for alternative models | No | Required only if you want to use OpenRouter models |
+| `OPENAI_BASE_URL` | Optional. Custom base URL for OpenAI-compatible APIs. For Azure OpenAI, set this to your Azure resource endpoint (e.g., `https://your-resource.openai.azure.com/`). | No |
+| `AZURE_OPENAI_API_VERSION` | Optional. Specifies the API version for Azure OpenAI requests (e.g., `2023-07-01-preview`). Defaults to `2023-07-01-preview` if not set and an Azure endpoint is used. | No | Relevant only when `OPENAI_BASE_URL` is an Azure OpenAI endpoint. |
 | `PORT` | Port for the API server (default: 8001) | No | If you host API and frontend on the same machine, make sure change port of `SERVER_BASE_URL` accordingly |
 | `SERVER_BASE_URL` | Base URL for the API server (default: http://localhost:8001) | No |
 
