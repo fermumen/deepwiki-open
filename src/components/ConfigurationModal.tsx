@@ -29,8 +29,8 @@ interface ConfigurationModalProps {
   setCustomModel: (value: string) => void;
 
   // Platform selection
-  selectedPlatform: 'github' | 'gitlab' | 'bitbucket';
-  setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket') => void;
+  selectedPlatform: 'github' | 'gitlab' | 'bitbucket' | 'azuredevops';
+  setSelectedPlatform: (value: 'github' | 'gitlab' | 'bitbucket' | 'azuredevops') => void;
 
   // Access token
   accessToken: string;
@@ -266,6 +266,16 @@ export default function ConfigurationModal({
                           }`}
                       >
                         <span className="text-sm">Bitbucket</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlatform('azuredevops')}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md border transition-all ${selectedPlatform === 'azuredevops'
+                          ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)] text-[var(--accent-primary)] shadow-sm'
+                          : 'border-[var(--border-color)] text-[var(--foreground)] hover:bg-[var(--background)]'
+                          }`}
+                      >
+                        <span className="text-sm">Azure DevOps</span>
                       </button>
                     </div>
                   </div>

@@ -18,7 +18,7 @@
 
 ## ✨ Features
 
-- **Instant Documentation**: Turn any GitHub, GitLab or BitBucket repo into a wiki in seconds
+- **Instant Documentation**: Turn any GitHub, GitLab, Bitbucket, or Azure DevOps repo into a wiki in seconds
 - **Private Repository Support**: Securely access private repositories with personal access tokens
 - **Smart Analysis**: AI-powered understanding of code structure and relationships
 - **Beautiful Diagrams**: Automatic Mermaid diagrams to visualize architecture and data flow
@@ -92,15 +92,15 @@ yarn dev
 #### Step 4: Use DeepWiki!
 
 1. Open [http://localhost:3000](http://localhost:3000) in your browser
-2. Enter a GitHub, GitLab, or Bitbucket repository (like `https://github.com/openai/codex`, `https://github.com/microsoft/autogen`, `https://gitlab.com/gitlab-org/gitlab`, or `https://bitbucket.org/redradish/atlassian_app_versions`)
-3. For private repositories, click "+ Add access tokens" and enter your GitHub or GitLab personal access token
+2. Enter a GitHub, GitLab, Bitbucket, or Azure DevOps repository (like `https://github.com/openai/codex`, `https://dev.azure.com/your-org/your-project/_git/your-repo`, `https://gitlab.com/gitlab-org/gitlab`, or `https://bitbucket.org/redradish/atlassian_app_versions`)
+3. For private repositories, click "+ Add access tokens" and enter your GitHub, GitLab, Bitbucket, or Azure DevOps personal access token
 4. Click "Generate Wiki" and watch the magic happen!
 
 ## 🔍 How It Works
 
 DeepWiki uses AI to:
 
-1. Clone and analyze the GitHub, GitLab, or Bitbucket repository (including private repos with token authentication)
+1. Clone and analyze the GitHub, GitLab, Bitbucket, or Azure DevOps repository (including private repos with token authentication)
 2. Create embeddings of the code for smart retrieval
 3. Generate documentation with context-aware AI (using Google Gemini, OpenAI, OpenRouter, or local Ollama models)
 4. Create visual diagrams to explain code relationships
@@ -110,7 +110,7 @@ DeepWiki uses AI to:
 
 ```mermaid
 graph TD
-    A[User inputs GitHub/GitLab/Bitbucket repo] --> AA{Private repo?}
+    A[User inputs GitHub/GitLab/Bitbucket/Azure DevOps repo] --> AA{Private repo?}
     AA -->|Yes| AB[Add access token]
     AA -->|No| B[Clone Repository]
     AB --> B
@@ -411,7 +411,7 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 
 ### Generation Issues
 - **"Error generating wiki"**: For very large repositories, try a smaller one first
-- **"Invalid repository format"**: Make sure you're using a valid GitHub, GitLab or Bitbucket URL format
+- **"Invalid repository format"**: Make sure you're using a valid GitHub, GitLab, Bitbucket, or Azure DevOps URL format
 - **"Could not fetch repository structure"**: For private repositories, ensure you've entered a valid personal access token with appropriate permissions
 - **"Diagram rendering error"**: The app will automatically try to fix broken diagrams
 

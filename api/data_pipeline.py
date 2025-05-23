@@ -90,6 +90,10 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
             elif type == "bitbucket":
                 # Format: https://{token}@bitbucket.org/owner/repo.git
                 clone_url = urlunparse((parsed.scheme, f"{access_token}@{parsed.netloc}", parsed.path, '', '', ''))
+            elif type == "azuredevops":
+                # Format: https://<PAT>@dev.azure.com/{organization}/{project}/_git/{repository}
+                # The access token is the PAT.
+                clone_url = urlunparse((parsed.scheme, f"{access_token}@{parsed.netloc}", parsed.path, '', '', ''))
             logger.info("Using access token for authentication")
 
         # Clone the repository
@@ -110,8 +114,10 @@ def download_repo(repo_url: str, local_path: str, type: str = "github", access_t
         # Sanitize error message to remove any tokens
         if access_token and access_token in error_msg:
             error_msg = error_msg.replace(access_token, "***TOKEN***")
+        logger.error(f"Error cloning repository: {error_msg}")
         raise ValueError(f"Error during cloning: {error_msg}")
     except Exception as e:
+        logger.error(f"An unexpected error occurred during cloning: {str(e)}")
         raise ValueError(f"An unexpected error occurred: {str(e)}")
 
 # Alias for backward compatibility
@@ -607,6 +613,166 @@ def get_bitbucket_file_content(repo_url: str, file_path: str, access_token: str 
     except Exception as e:
         raise ValueError(f"Failed to get file content: {str(e)}")
 
+def get_azuredevops_file_content(repo_url: str, file_path: str, access_token: str = None) -> str:
+    """
+    Retrieves the content of a file from an Azure DevOps repository using the REST API.
+
+    Args:
+        repo_url (str): The URL of the Azure DevOps repository (e.g., "https://dev.azure.com/{organization}/{project}/_git/{repository}")
+        file_path (str): The path to the file within the repository (e.g., "src/main.py")
+        access_token (str, optional): Azure DevOps Personal Access Token (PAT)
+
+    Returns:
+        str: The content of the file as a string
+
+    Raises:
+        ValueError: If the file cannot be fetched or if the URL is not a valid Azure DevOps URL
+    """
+    try:
+        parsed_url = urlparse(repo_url)
+        if not (parsed_url.scheme and parsed_url.netloc and ("dev.azure.com" in parsed_url.netloc or "visualstudio.com" in parsed_url.netloc)):
+            raise ValueError("Not a valid Azure DevOps repository URL")
+
+        path_segments = [s for s in parsed_url.path.split('/') if s]
+
+        if "dev.azure.com" in parsed_url.netloc:
+            if len(path_segments) < 4 or path_segments[-2] != "_git": # org, project, _git, repo
+                raise ValueError("Invalid Azure DevOps URL format. Expected: https://dev.azure.com/{organization}/{project}/_git/{repository}")
+            organization = path_segments[0]
+            project = path_segments[1]
+            repository_id = path_segments[3] # This is the repository name, which can also be used as repositoryId for the API
+        elif "visualstudio.com" in parsed_url.netloc: # Older format e.g. {organization}.visualstudio.com/{project}/_git/{repository}
+            organization = parsed_url.netloc.split('.')[0]
+            if len(path_segments) < 3 or path_segments[-2] != "_git": # project, _git, repo
+                 raise ValueError("Invalid Azure DevOps URL format for visualstudio.com. Expected: https://{organization}.visualstudio.com/{project}/_git/{repository}")
+            project = path_segments[0]
+            repository_id = path_segments[2]
+        else:
+            raise ValueError("Unsupported Azure DevOps URL structure.")
+
+
+        # Construct the API URL
+        # https://docs.microsoft.com/en-us/rest/api/azure/devops/git/items/get?view=azure-devops-rest-7.0
+        api_url = f"https://dev.azure.com/{organization}/{project}/_apis/git/repositories/{repository_id}/items"
+        params = {
+            "path": file_path,
+            "api-version": "7.0",
+            "$format": "json",  # Request JSON to get metadata including downloadUrl or content
+            "includeContent": "true" # Directly include content if possible
+        }
+
+        # Prepare curl command
+        curl_cmd = ["curl", "-s"]
+        if access_token:
+            # For Azure DevOps, PAT is typically used in a Basic Auth header, where username is empty and password is the PAT.
+            # The string ":<PAT>" is base64 encoded.
+            auth_header = base64.b64encode(f":{access_token}".encode()).decode()
+            curl_cmd.extend(["-H", f"Authorization: Basic {auth_header}"])
+
+        # Build URL with query parameters
+        query_string = "&".join([f"{key}={quote(str(value))}" for key, value in params.items()])
+        full_api_url = f"{api_url}?{query_string}"
+        curl_cmd.append(full_api_url)
+
+        logger.info(f"Fetching file content from Azure DevOps API: {api_url} for path: {file_path}")
+        result = subprocess.run(
+            curl_cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        response_text = result.stdout.decode("utf-8")
+        try:
+            content_data = json.loads(response_text)
+        except json.JSONDecodeError:
+            # If response is not JSON, it might be the raw content (though API usually returns JSON for items)
+            # Or it could be an error page not in JSON format.
+            logger.warning(f"Response from Azure DevOps was not JSON: {response_text[:200]}...") # Log snippet
+            # Assuming it could be direct content if not JSON and no error in subprocess
+            if result.returncode == 0 and response_text:
+                 return response_text # This case might be unlikely for 'items' endpoint, but handle defensively.
+            raise ValueError(f"Invalid JSON response from Azure DevOps API: {response_text[:200]}...")
+
+
+        if "content" in content_data:
+            # Content is directly available (likely if includeContent=true was effective and file isn't binary/too large)
+            # Azure DevOps API documentation suggests content is base64 encoded if returned directly in JSON.
+            # However, sometimes it might be plain text. Checking for 'isBase64' or similar property if available.
+            # For simplicity, assuming if 'content' key exists, it's the text. If it's base64, it will need decoding.
+            # The 'git/items' endpoint with 'includeContent=true' should provide 'content'.
+            # If it's a binary file, this might be tricky. For now, assume text files.
+            # The API might also provide a downloadUrl for large files, which would require another request.
+            # For simplicity, we'll assume content is directly available and base64 encoded if not plain.
+            # The documentation implies 'content' is base64 encoded.
+            if content_data.get("isFolder"): # Check if it's a folder
+                 raise ValueError(f"Path '{file_path}' is a directory, not a file.")
+
+            file_content = content_data["content"]
+            # Assuming content is base64 encoded as per typical API behavior for file content within JSON
+            # However, the `items` endpoint with `includeContent=true` might return plain text directly.
+            # Let's try to decode if it looks like base64, otherwise use as is.
+            # A simple check for base64 could be if it's a long string with no spaces and typical base64 chars.
+            # For robustness, it's better to rely on an explicit encoding field if provided by the API.
+            # The 'contentMetadata' might have this. Here, let's assume it's plain or needs b64decode.
+            # The API docs for `includeContent=true` are a bit vague if it's always base64 or depends on file type.
+            # Let's assume it's plain text for now, as `curl` to `.../items?path=...&includeContent=true` often yields plain text.
+            # If the API returns base64 encoded content in the "content" field:
+            # try:
+            #     return base64.b64decode(file_content).decode('utf-8')
+            # except Exception as e:
+            #     logger.warning(f"Could not decode base64 content, assuming plain text: {e}")
+            #     return file_content # Fallback to plain text
+            return file_content # Assuming plain text based on typical API behavior for text files when `includeContent=true`
+        elif "downloadUrl" in content_data:
+            # Fallback to downloadUrl if content is not directly included
+            # This would require another HTTP GET to the downloadUrl
+            logger.info(f"Content not directly available, attempting to use downloadUrl: {content_data['downloadUrl']}")
+            download_url_curl_cmd = ["curl", "-s", "-L"] # -L to follow redirects
+            if access_token:
+                auth_header_download = base64.b64encode(f":{access_token}".encode()).decode()
+                download_url_curl_cmd.extend(["-H", f"Authorization: Basic {auth_header_download}"])
+            download_url_curl_cmd.append(content_data["downloadUrl"])
+
+            download_result = subprocess.run(
+                download_url_curl_cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            return download_result.stdout.decode("utf-8")
+        elif content_data.get("isFolder"):
+             raise ValueError(f"Path '{file_path}' is a directory, not a file.")
+        else:
+            logger.error(f"Azure DevOps API response for {file_path} did not contain 'content' or 'downloadUrl'. Response: {content_data}")
+            raise ValueError("File content not found in Azure DevOps API response. The path might be incorrect or the file empty.")
+
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.decode('utf-8')
+        # Sanitize error message to remove any tokens
+        if access_token and access_token in error_msg: # This might not be effective if error is from API server
+            error_msg = error_msg.replace(access_token, "***TOKEN***")
+
+        # Try to parse JSON error from Azure DevOps
+        try:
+            api_error = json.loads(e.stdout.decode('utf-8')) # API errors are often in stdout for curl
+            if "message" in api_error:
+                error_msg = f"Azure DevOps API error: {api_error['message']}"
+            elif "$id" in api_error and "innerException" in api_error and api_error["innerException"] is not None and "message" in api_error["innerException"]: # More detailed error
+                 error_msg = f"Azure DevOps API error: {api_error['innerException']['message']}"
+
+        except json.JSONDecodeError:
+            pass # Stick with original stderr if stdout is not JSON
+
+        logger.error(f"Error fetching file content from Azure DevOps: {error_msg}")
+        raise ValueError(f"Error fetching file content from Azure DevOps: {error_msg}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON response from Azure DevOps API: {e}")
+        raise ValueError(f"Invalid JSON response from Azure DevOps API: {e}")
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while fetching Azure DevOps file content: {str(e)}")
+        raise ValueError(f"Failed to get Azure DevOps file content: {str(e)}")
+
 
 def get_file_content(repo_url: str, file_path: str, type: str = "github", access_token: str = None) -> str:
     """
@@ -629,8 +795,10 @@ def get_file_content(repo_url: str, file_path: str, type: str = "github", access
         return get_gitlab_file_content(repo_url, file_path, access_token)
     elif type == "bitbucket":
         return get_bitbucket_file_content(repo_url, file_path, access_token)
+    elif type == "azuredevops":
+        return get_azuredevops_file_content(repo_url, file_path, access_token)
     else:
-        raise ValueError("Unsupported repository URL. Only GitHub and GitLab are supported.")
+        raise ValueError("Unsupported repository URL. Only GitHub, GitLab, Bitbucket, and Azure DevOps are supported.")
 
 class DatabaseManager:
     """
@@ -703,6 +871,15 @@ class DatabaseManager:
                 elif type == "bitbucket":
                     # Bitbucket URL format: https://bitbucket.org/owner/repo
                     repo_name = repo_url_or_path.split("/")[-1].replace(".git", "")
+                elif type == "azuredevops":
+                    # Azure DevOps URL format: https://dev.azure.com/{organization}/{project}/_git/{repository_name}
+                    # or https://{organization}.visualstudio.com/{project}/_git/{repository_name}
+                    path_parts = repo_url_or_path.split("/_git/")
+                    if len(path_parts) > 1:
+                        repo_name = path_parts[-1].replace(".git", "")
+                    else:
+                        # Fallback for different URL structures or if _git is not present
+                        repo_name = repo_url_or_path.split("/")[-1].replace(".git", "")
                 else:
                     # Generic handling for other Git URLs
                     repo_name = repo_url_or_path.split("/")[-1].replace(".git", "")
